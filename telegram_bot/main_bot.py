@@ -1,48 +1,61 @@
+# telegram_bot/main_bot.py
 import os
-import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
-from services.ia_service import predecir_partido
 
+# Cargar variables de entorno
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 
+# Crear instancia Flask
 app = Flask(__name__)
-application = Application.builder().token(TELEGRAM_TOKEN).build()
 
+# Crear aplicación de Telegram
+bot_app = Application.builder().token(TOKEN).build()
+
+# --- Comandos del bot ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Neurobet IA Bot\nUsa /predecir Equipo1 vs Equipo2")
+    await update.message.reply_text("🤖 ¡Hola! Soy Neurobet IA Bot.\nPuedo darte predicciones y estadísticas deportivas. Usa /predecir [equipo1] vs [equipo2]")
 
 async def predecir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args or "vs" not in " ".join(context.args):
-        await update.message.reply_text("⚠️ Formato: /predecir Equipo1 vs Equipo2")
-        return
     texto = " ".join(context.args)
-    equipo_local, equipo_visitante = [p.strip() for p in texto.split("vs")]
-    pred = predecir_partido(equipo_local, equipo_visitante)
-    mejor = max(
-        [("🏠 " + pred["equipo_local"], pred["prob_local"]), ("🤝 Empate", pred["prob_empate"]), ("🚌 " + pred["equipo_visitante"], pred["prob_visitante"])],
-        key=lambda x: x[1],
-    )
-    msg = f"📊 Predicción Neurobet IA\n{pred['equipo_local']} vs {pred['equipo_visitante']}\n\n🏠 Local: {pred['prob_local']}%\n🤝 Empate: {pred['prob_empate']}%\n🚌 Visitante: {pred['prob_visitante']}%\n\n✅ Sugerencia: {mejor[0]} ({mejor[1]}%)"
-    await update.message.reply_text(msg)
+    if "vs" not in texto:
+        await update.message.reply_text("⚠️ Usa el formato: /predecir [equipo1] vs [equipo2]")
+        return
+    equipo1, equipo2 = [x.strip() for x in texto.split("vs")]
+    # Simulación simple de predicción (luego se conectará al modelo IA real)
+    await update.message.reply_text(f"📊 Predicción simulada:\n{equipo1}: 52%\n{equipo2}: 48%\n(Ganador probable: {equipo1})")
 
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("predecir", predecir))
+# Registrar comandos
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(CommandHandler("predecir", predecir))
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Neurobet IA Bot activo ✅", 200
-
+# --- Endpoint Webhook ---
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.run(application.process_update(update))
-    return "OK", 200
+    try:
+        update = Update.de_json(request.get_json(force=True), bot_app.bot)
+        bot_app.update_queue.put_nowait(update)
+    except Exception as e:
+        print(f"❌ Error procesando webhook: {e}")
+        return "error", 500
+    return "ok", 200
 
+# Endpoint raíz (opcional)
+@app.route("/", methods=["GET"])
+def index():
+    return "🤖 Neurobet IA Bot en ejecución - Webhook activo", 200
+
+# --- Ejecución principal ---
 if __name__ == "__main__":
-    print(f"🚀 Bot corriendo en puerto {PORT}")
-    app.run(host="0.0.0.0", port=PORT)
+    print(f"🚀 Iniciando Neurobet IA en modo Webhook (Render) - Puerto {PORT}")
+    bot_app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="/webhook",
+        webhook_url=f"https://bot-neurobet-ia.onrender.com/webhook"
+    )
