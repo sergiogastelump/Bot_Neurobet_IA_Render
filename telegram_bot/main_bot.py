@@ -53,16 +53,26 @@ application.add_handler(CommandHandler("predecir", predecir))
 def index():
     return "🤖 Neurobet IA Webhook activo", 200
 
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Recibe actualizaciones desde Telegram (modo síncrono para gthread)."""
+    """Recibe actualizaciones desde Telegram de forma segura."""
     try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        application.update_queue.put_nowait(update)
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            print("⚠️ Webhook recibido vacío o sin datos JSON válidos.")
+            return "No data", 200
+
+        update = Update.de_json(data, application.bot)
+        if update:
+            application.update_queue.put_nowait(update)
+        else:
+            print("⚠️ Update inválido recibido.")
     except Exception as e:
         print(f"⚠️ Error procesando webhook: {e}")
-        return "Error interno", 500
+        return "Internal Error", 200  # <— devolvemos 200 para que Telegram no marque error
     return "OK", 200
+
 
 # === MAIN === #
 if __name__ == '__main__':
