@@ -4,19 +4,21 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
-# === CONFIGURACIÓN === #
+# === CARGAR VARIABLES === #
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
-WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
 
 if not TELEGRAM_TOKEN:
     raise ValueError("❌ No se encontró TELEGRAM_TOKEN en las variables de entorno")
 
-# === INICIALIZACIÓN DE FLASK === #
+# === CONFIGURACIÓN GENERAL === #
+WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
+
+# === INICIALIZAR FLASK === #
 app = Flask(__name__)
 
-# === APLICACIÓN DE TELEGRAM === #
+# === INICIALIZAR BOT === #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 # === COMANDOS === #
@@ -56,21 +58,24 @@ def index():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Recibe actualizaciones desde Telegram de forma segura."""
+    """Recibe actualizaciones desde Telegram y evita errores 500."""
     try:
-        data = request.get_json(force=True, silent=True)
+        data = request.get_json(silent=True)
         if not data:
-            print("⚠️ Webhook recibido vacío o sin datos JSON válidos.")
+            print("⚠️ Webhook recibido vacío o inválido.")
             return "No data", 200
 
         update = Update.de_json(data, application.bot)
         if update:
             application.update_queue.put_nowait(update)
+            print(f"✅ Update procesado: {update}")
         else:
-            print("⚠️ Update inválido recibido.")
+            print("⚠️ Update vacío recibido.")
     except Exception as e:
-        print(f"⚠️ Error procesando webhook: {e}")
-        return "Internal Error", 200  # <— devolvemos 200 para que Telegram no marque error
+        print(f"❌ Error en webhook: {e}")
+        # devolvemos 200 OK para que Telegram no lo marque como error
+        return "Internal error handled", 200
+
     return "OK", 200
 
 
