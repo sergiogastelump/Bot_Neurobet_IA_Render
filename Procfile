@@ -1,1 +1,1 @@
-web: python -m telegram_bot.main_bot
+web: gunicorn -k uvicorn.workers.UvicornWorker telegram_bot.main_bot:app
