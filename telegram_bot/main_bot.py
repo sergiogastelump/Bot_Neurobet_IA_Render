@@ -16,16 +16,19 @@ app = Flask(__name__)
 
 # === INICIALIZACIÓN DEL BOT DE TELEGRAM === #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
+application.initialize()  # ✅ Inicializa el bot (necesario para Flask + Webhook)
 
 # === COMANDOS DEL BOT === #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start"""
     await update.message.reply_text(
         "👋 Bienvenido a *Neurobet IA Bot*.\n"
-        "Usa /predecir para analizar un partido o /ayuda para ver comandos disponibles.",
+        "Usa /predecir para analizar un partido o /ayuda para ver los comandos disponibles.",
         parse_mode="Markdown"
     )
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /ayuda"""
     await update.message.reply_text(
         "📘 *Comandos disponibles:*\n"
         "/start - Inicio\n"
@@ -35,6 +38,7 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def predecir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /predecir"""
     if len(context.args) < 3:
         await update.message.reply_text("⚠️ Formato correcto: /predecir América vs Chivas")
         return
@@ -54,15 +58,16 @@ application.add_handler(CommandHandler("predecir", predecir))
 # === RUTAS FLASK === #
 @app.route('/')
 def home():
-    """Ruta principal para Render."""
+    """Ruta principal de verificación"""
     return "🤖 Neurobet IA Webhook activo", 200
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
-    """Recibe actualizaciones de Telegram y las procesa."""
+def webhook():
+    """Recibe actualizaciones de Telegram (modo Flask)."""
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
+        # Procesar la actualización sin bloquear
+        application.create_task(application.process_update(update))
     except Exception as e:
         print(f"⚠️ Error procesando webhook: {e}")
     return "OK", 200
