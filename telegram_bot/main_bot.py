@@ -1,5 +1,6 @@
 # telegram_bot/main_bot.py
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -16,7 +17,9 @@ app = Flask(__name__)
 
 # === INICIALIZACIÓN DEL BOT DE TELEGRAM === #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
-application.initialize()  # ✅ Inicializa el bot (necesario para Flask + Webhook)
+
+# Inicializar correctamente la app asíncrona
+asyncio.get_event_loop().run_until_complete(application.initialize())  # ✅ CORREGIDO
 
 # === COMANDOS DEL BOT === #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,7 +69,6 @@ def webhook():
     """Recibe actualizaciones de Telegram (modo Flask)."""
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-        # Procesar la actualización sin bloquear
         application.create_task(application.process_update(update))
     except Exception as e:
         print(f"⚠️ Error procesando webhook: {e}")
