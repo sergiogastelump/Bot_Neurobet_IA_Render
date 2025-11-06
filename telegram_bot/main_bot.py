@@ -1,25 +1,25 @@
-# telegram_bot/main_bot.py
 import os
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
-import asyncio
 
-# === CARGAR VARIABLES DE ENTORNO === #
+# === CONFIGURACIÓN === #
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
-WEBHOOK_URL = "https://bot-neurobet-ia.onrender.com/webhook"
+WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
 
-# === CONFIGURAR FLASK === #
+if not TELEGRAM_TOKEN:
+    raise ValueError("❌ No se encontró TELEGRAM_TOKEN en las variables de entorno")
+
+# === INICIALIZACIÓN DE FLASK === #
 app = Flask(__name__)
 
-# === INICIALIZAR BOT DE TELEGRAM === #
+# === APLICACIÓN DE TELEGRAM === #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
-asyncio.get_event_loop().run_until_complete(application.initialize())
 
-# === COMANDOS DEL BOT === #
+# === COMANDOS === #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Bienvenido a *Neurobet IA Bot*.\n"
@@ -38,44 +38,33 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def predecir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 3:
-        await update.message.reply_text("⚠️ Formato correcto: /predecir América vs Chivas")
+        await update.message.reply_text("Formato correcto: /predecir América vs Chivas")
         return
-
     local, visitante = context.args[0], context.args[2]
-    await update.message.reply_text(
-        f"🔮 *Predicción IA:*\n"
-        f"{local} 62% - Empate 23% - {visitante} 15%",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"🔮 Predicción IA:\n{local} 62% - Empate 23% - {visitante} 15%")
 
 # === REGISTRAR COMANDOS === #
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("ayuda", ayuda))
 application.add_handler(CommandHandler("predecir", predecir))
 
-# === RUTAS FLASK === #
+# === ENDPOINTS === #
 @app.route('/')
-def home():
-    """Ruta principal"""
+def index():
     return "🤖 Neurobet IA Webhook activo", 200
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
-    """Recibe actualizaciones de Telegram y las procesa (modo async)."""
+def webhook():
+    """Recibe actualizaciones desde Telegram (modo síncrono para gthread)."""
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
+        application.update_queue.put_nowait(update)
     except Exception as e:
         print(f"⚠️ Error procesando webhook: {e}")
-        return "ERROR", 500
+        return "Error interno", 500
     return "OK", 200
 
 # === MAIN === #
-if __name__ == "__main__":
-    print(f"🚀 Iniciando Neurobet IA en modo Webhook (Render) - Puerto {PORT}")
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="webhook",
-        webhook_url=WEBHOOK_URL
-    )
+if __name__ == '__main__':
+    print(f"🚀 Iniciando Neurobet IA en modo Webhook - Puerto {PORT}")
+    app.run(host="0.0.0.0", port=PORT)
