@@ -1,11 +1,12 @@
 import os
+import asyncio
 import logging
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
-# === CONFIGURACIÓN === #
+# === CONFIGURACIÓN GENERAL === #
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 PORT = int(os.environ.get("PORT", 10000))
@@ -19,8 +20,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("neurobet.log"),
-        logging.StreamHandler()
+        logging.FileHandler("neurobet.log"),  # Guarda registros
+        logging.StreamHandler()                # Muestra logs en consola Render
     ]
 )
 logger = logging.getLogger(__name__)
@@ -94,7 +95,15 @@ def webhook():
     return "OK", 200
 
 
-# === MAIN === #
+# === BLOQUE FINAL: INICIALIZAR Y ARRANCAR EL BOT === #
 if __name__ == "__main__":
     logger.info(f"🚀 Iniciando Neurobet IA Webhook en puerto {PORT}")
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(application.initialize())
+
+    # Ejecutar el bot en segundo plano (procesa mensajes entrantes)
+    loop.create_task(application.start())
+
+    # Iniciar el servidor Flask
     app.run(host="0.0.0.0", port=PORT)
