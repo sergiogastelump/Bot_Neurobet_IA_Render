@@ -54,6 +54,7 @@ application.add_handler(CommandHandler("predecir", predecir))
 # === RUTAS FLASK === #
 @app.route('/')
 def home():
+    """Ruta principal para Render."""
     return "🤖 Neurobet IA Webhook activo", 200
 
 @app.route('/webhook', methods=['POST'])
@@ -66,17 +67,14 @@ async def webhook():
         print(f"⚠️ Error procesando webhook: {e}")
     return "OK", 200
 
-# === PUNTO DE ENTRADA PRINCIPAL === #
+# === EJECUCIÓN PRINCIPAL === #
 if __name__ == "__main__":
     print(f"🚀 Iniciando Neurobet IA en modo Webhook (Render) - Puerto {PORT}")
 
-    # Configurar el webhook en Telegram
+    # Configurar el webhook de Telegram
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path="webhook",
         webhook_url=WEBHOOK_URL
     )
-
-    # Ejecutar Flask (solo para visualización en navegador)
-    app.run(host="0.0.0.0", port=PORT)
