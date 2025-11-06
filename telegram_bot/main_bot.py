@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+from threading import Thread
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -15,25 +16,23 @@ WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
 if not TELEGRAM_TOKEN:
     raise ValueError("❌ No se encontró TELEGRAM_TOKEN en las variables de entorno")
 
-# === CONFIGURAR LOGGING === #
+# === LOGGING === #
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("neurobet.log"),  # Guarda registros
-        logging.StreamHandler()                # Muestra logs en consola Render
-    ]
+    handlers=[logging.FileHandler("neurobet.log"), logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 
 # === INICIALIZAR FLASK === #
 app = Flask(__name__)
 
-# === INICIALIZAR BOT DE TELEGRAM === #
+# === INICIALIZAR BOT === #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# === COMANDOS === #
+# === COMANDOS DEL BOT === #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("👋 Ejecutando comando /start")
     await update.message.reply_text(
         "👋 Bienvenido a *Neurobet IA Bot*.\n"
         "Usa /predecir para analizar un partido o /ayuda para ver los comandos disponibles.",
@@ -41,6 +40,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("📘 Ejecutando comando /ayuda")
     await update.message.reply_text(
         "📘 *Comandos disponibles:*\n"
         "/start - Inicio\n"
@@ -50,6 +50,7 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def predecir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("🔮 Ejecutando comando /predecir")
     if len(context.args) < 3:
         await update.message.reply_text("Formato correcto: /predecir América vs Chivas")
         return
@@ -63,22 +64,17 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("ayuda", ayuda))
 application.add_handler(CommandHandler("predecir", predecir))
 
-# === ENDPOINT PRINCIPAL === #
+# === FLASK ROUTES === #
 @app.route("/")
 def home():
     return "🤖 Neurobet IA Webhook activo", 200
 
-# === ENDPOINT WEBHOOK === #
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """
-    Endpoint que recibe las actualizaciones de Telegram.
-    Se maneja cualquier error para evitar 500 Internal Server Error.
-    """
     try:
         data = request.get_json(silent=True)
         if not data:
-            logger.warning("⚠️ Webhook recibió un cuerpo vacío o inválido.")
+            logger.warning("⚠️ Webhook recibió cuerpo vacío.")
             return "OK", 200
 
         update = Update.de_json(data, application.bot)
@@ -89,21 +85,22 @@ def webhook():
             logger.warning("⚠️ Update inválido recibido.")
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
-        # AUNQUE OCURRA ERROR, devolvemos 200 para que Telegram no marque fallo
         return "OK", 200
-
     return "OK", 200
 
-
-# === BLOQUE FINAL: INICIALIZAR Y ARRANCAR EL BOT === #
-if __name__ == "__main__":
-    logger.info(f"🚀 Iniciando Neurobet IA Webhook en puerto {PORT}")
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(application.initialize())
-
-    # Ejecutar el bot en segundo plano (procesa mensajes entrantes)
-    loop.create_task(application.start())
-
-    # Iniciar el servidor Flask
+# === ARRANQUE BOT Y FLASK EN PARALELO === #
+def run_flask():
+    logger.info(f"🌐 Iniciando servidor Flask en puerto {PORT}")
     app.run(host="0.0.0.0", port=PORT)
+
+async def run_bot():
+    logger.info("🤖 Iniciando bot de Telegram...")
+    await application.initialize()
+    await application.start()
+    logger.info("✅ Bot en ejecución continua (Webhook activo).")
+    await asyncio.Event().wait()  # Mantiene el loop vivo
+
+if __name__ == "__main__":
+    logger.info("🚀 Iniciando Neurobet IA (Render Deployment)")
+    Thread(target=run_flask, daemon=True).start()  # Flask en hilo paralelo
+    asyncio.run(run_bot())
