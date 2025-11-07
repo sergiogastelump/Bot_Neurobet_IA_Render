@@ -3,6 +3,7 @@ import json
 import logging
 import threading
 import asyncio
+import requests
 from flask import Flask, request
 from pathlib import Path
 from telegram import Update
@@ -15,11 +16,11 @@ from services.memoria_service import (
     guardar_evento_usuario,
 )
 from services.autoaprendizaje_service import (
+    evaluar_predicciones,
     obtener_estado_modelo,
     inicializar_modelo,
 )
 from services.scheduler_service import iniciar_hilo_autoaprendizaje
-from services.visualizacion_service import generar_grafico_precision
 from services.evaluacion_service import (
     evaluar_predicciones_recientes,
     iniciar_autoevaluacion_automatica,
@@ -34,17 +35,36 @@ logger = logging.getLogger(__name__)
 
 # === VARIABLES DE ENTORNO === #
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8238035123:AAHaX2iFZjNWFMLwm8QUmjYc09qA_y9IDa8")
-PORT = int(os.environ.get("PORT", 10000))
-WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
+PORT = int(os.environ.get("PORT", 0))
+WEBHOOK_URL = "https://bot-neurobet-ia.onrender.com/webhook"
 
 # === FLASK APP === #
 app = Flask(__name__)
 
-# === INICIAR BOT DE TELEGRAM === #
+# === INICIAR BOT === #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 # === CREAR MODELO SI NO EXISTE === #
 inicializar_modelo()
+
+# === FUNCIÓN: VERIFICAR WEBHOOK AUTOMÁTICAMENTE === #
+def verificar_y_configurar_webhook():
+    try:
+        info = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getWebhookInfo").json()
+        actual = info.get("result", {}).get("url", "")
+        if actual != WEBHOOK_URL:
+            r = requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
+                data={"url": WEBHOOK_URL}
+            ).json()
+            if r.get("ok"):
+                logger.info(f"✅ Webhook configurado automáticamente en: {WEBHOOK_URL}")
+            else:
+                logger.error(f"❌ Error al configurar webhook: {r}")
+        else:
+            logger.info("🔗 Webhook ya configurado correctamente.")
+    except Exception as e:
+        logger.error(f"⚠️ No se pudo verificar o configurar el webhook automáticamente: {e}")
 
 # === COMANDOS DEL BOT === #
 
@@ -57,9 +77,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Soy *Neurobet IA*, tu asistente de predicciones deportivas con autoaprendizaje y autoevaluación.\n\n"
         f"📘 *Comandos disponibles:*\n"
         f"/predecir [Equipo1 vs Equipo2]\n"
-        f"/historial - Tus predicciones\n"
-        f"/global - Actividad global\n"
-        f"/aprendizaje - Entrenamiento IA\n"
         f"/evaluar - Comprobar aciertos reales\n"
         f"/modelo - Estado actual del modelo\n"
         f"/dashboard - Ver resumen web\n"
@@ -76,9 +93,6 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📘 *Comandos disponibles:*\n"
         "/start - Iniciar conversación\n"
         "/predecir [Equipo1 vs Equipo2]\n"
-        "/historial - Ver tus últimas predicciones\n"
-        "/global - Actividad global\n"
-        "/aprendizaje - Forzar entrenamiento IA\n"
         "/evaluar - Revisar aciertos reales\n"
         "/modelo - Ver estado del modelo\n"
         "/dashboard - Abrir panel web",
@@ -191,37 +205,30 @@ def dashboard():
     return html, 200
 
 
-# === WEBHOOK === #
+# === WEBHOOK (CORREGIDO Y FUNCIONAL) === #
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update_data = request.get_json(force=True)
-    update = Update.de_json(update_data, application.bot)
-    logger.info(f"✅ Update recibido correctamente: {update}")
-    application.update_queue.put_nowait(update)
+    """Recibe actualizaciones desde Telegram y las procesa directamente."""
+    try:
+        update_data = request.get_json(force=True)
+        update = Update.de_json(update_data, application.bot)
+        logger.info(f"✅ Update recibido correctamente: {update}")
+
+        asyncio.run(application.process_update(update))
+    except Exception as e:
+        logger.error(f"❌ Error al procesar el webhook: {e}")
+        return "ERROR", 500
+
     return "OK", 200
 
 
-# === EJECUCIÓN CONCURRENTE (FLASK + TELEGRAM) === #
-logger.info("🚀 Iniciando Neurobet IA (modo Render o local)")
-inicializar_modelo()
-iniciar_hilo_autoaprendizaje()
-iniciar_autoevaluacion_automatica()
+# === INICIO DEL SERVICIO === #
+if __name__ == "__main__":
+    logger.info("🚀 Iniciando Neurobet IA (Modo Servidor Render)")
+    verificar_y_configurar_webhook()
+    inicializar_modelo()
+    iniciar_hilo_autoaprendizaje()
+    iniciar_autoevaluacion_automatica()
 
-# 🧠 Ejecutar Telegram en segundo plano (para Render y modo local)
-async def iniciar_bot():
-    logger.info("🤖 Iniciando aplicación Telegram en modo webhook concurrente...")
-    await application.initialize()
-    await application.start()
-    logger.info("✅ Bot de Telegram listo y escuchando actualizaciones.")
-
-def run_asyncio_loop():
-    try:
-        asyncio.run(iniciar_bot())
-    except Exception as e:
-        logger.error(f"❌ Error iniciando bot de Telegram: {e}")
-
-threading.Thread(target=run_asyncio_loop, daemon=True).start()
-logger.info("🌐 Flask ejecutándose y bot Telegram activo.")
-
-# Ejecutar Flask (Render detecta el puerto automáticamente)
-app.run(host="0.0.0.0", port=PORT)
+    logger.info("🌐 Flask ejecutándose y bot Telegram activo.")
+    app.run(host="0.0.0.0", port=PORT)
