@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import threading
 import asyncio
 import requests
 from flask import Flask, request
@@ -31,7 +30,7 @@ from services.evaluacion_service import evaluar_predicciones_recientes, iniciar_
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 # === WEBHOOK CHECK === #
-def verificar_y_configurar_webhook():
+def configurar_webhook():
     try:
         info = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getWebhookInfo").json()
         actual = info.get("result", {}).get("url", "")
@@ -47,7 +46,7 @@ def verificar_y_configurar_webhook():
         else:
             logger.info("🔗 Webhook ya configurado correctamente.")
     except Exception as e:
-        logger.error(f"⚠️ Error al configurar webhook: {e}")
+        logger.error(f"⚠️ No se pudo configurar el webhook: {e}")
 
 # === COMANDOS === #
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,23 +137,20 @@ def webhook():
     return "OK", 200
 
 # === ARRANQUE PRINCIPAL === #
-def iniciar_bot():
-    async def main():
-        await application.initialize()
-        await application.start()
-        logger.info("✅ Bot Telegram inicializado correctamente.")
-    asyncio.run(main())
-
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Neurobet IA...")
+
+    # Inicialización IA + tareas automáticas
     inicializar_modelo()
     iniciar_hilo_autoaprendizaje()
     iniciar_autoevaluacion_automatica()
-    verificar_y_configurar_webhook()
+    configurar_webhook()
 
-    # Hilo del bot de Telegram
-    threading.Thread(target=iniciar_bot, daemon=True).start()
+    # 🔹 Inicializar bot sincronamente antes de iniciar Flask
+    asyncio.run(application.initialize())
+    asyncio.run(application.start())
+    logger.info("✅ Bot Telegram inicializado correctamente y listo para recibir webhooks.")
 
-    # Flask principal
+    # 🔹 Iniciar Flask después de que el bot esté listo
     logger.info(f"🌐 Servidor Flask ejecutándose en puerto dinámico {PORT}")
     app.run(host="0.0.0.0", port=PORT)
