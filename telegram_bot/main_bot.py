@@ -13,11 +13,8 @@ from services.ia_service import predecir_partido
 from services.memoria_service import (
     guardar_evento_global,
     guardar_evento_usuario,
-    obtener_historial_usuario,
-    obtener_resumen_global,
 )
 from services.autoaprendizaje_service import (
-    evaluar_predicciones,
     obtener_estado_modelo,
     inicializar_modelo,
 )
@@ -37,13 +34,13 @@ logger = logging.getLogger(__name__)
 
 # === VARIABLES DE ENTORNO === #
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8238035123:AAHaX2iFZjNWFMLwm8QUmjYc09qA_y9IDa8")
-PORT = int(os.environ.get("PORT", 0))  # ✅ Puerto dinámico para Render
+PORT = int(os.environ.get("PORT", 10000))
 WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
 
 # === FLASK APP === #
 app = Flask(__name__)
 
-# === INICIAR BOT === #
+# === INICIAR BOT DE TELEGRAM === #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 # === CREAR MODELO SI NO EXISTE === #
@@ -204,24 +201,27 @@ def webhook():
     return "OK", 200
 
 
-# === INICIO DEL SERVICIO === #
-if __name__ == "__main__":
-    logger.info("🚀 Iniciando Neurobet IA (Modo Servidor Render)")
-    inicializar_modelo()
-    iniciar_hilo_autoaprendizaje()
-    iniciar_autoevaluacion_automatica()
+# === EJECUCIÓN CONCURRENTE (FLASK + TELEGRAM) === #
+logger.info("🚀 Iniciando Neurobet IA (modo Render o local)")
+inicializar_modelo()
+iniciar_hilo_autoaprendizaje()
+iniciar_autoevaluacion_automatica()
 
-    # 🧠 Ejecutar Telegram en segundo plano concurrente
-    async def iniciar_bot():
-        logger.info("🤖 Iniciando aplicación Telegram en modo webhook concurrente...")
-        await application.initialize()
-        await application.start()
-        logger.info("✅ Bot de Telegram listo y escuchando actualizaciones.")
+# 🧠 Ejecutar Telegram en segundo plano (para Render y modo local)
+async def iniciar_bot():
+    logger.info("🤖 Iniciando aplicación Telegram en modo webhook concurrente...")
+    await application.initialize()
+    await application.start()
+    logger.info("✅ Bot de Telegram listo y escuchando actualizaciones.")
 
-    def run_asyncio_loop():
+def run_asyncio_loop():
+    try:
         asyncio.run(iniciar_bot())
+    except Exception as e:
+        logger.error(f"❌ Error iniciando bot de Telegram: {e}")
 
-    threading.Thread(target=run_asyncio_loop, daemon=True).start()
+threading.Thread(target=run_asyncio_loop, daemon=True).start()
+logger.info("🌐 Flask ejecutándose y bot Telegram activo.")
 
-    logger.info(f"🌐 Servidor Flask ejecutándose en puerto dinámico {PORT}")
-    app.run(host="0.0.0.0", port=PORT)
+# Ejecutar Flask (Render detecta el puerto automáticamente)
+app.run(host="0.0.0.0", port=PORT)
