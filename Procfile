@@ -1,1 +1,1 @@
-web: python -m telegram_bot.main_bot
+web: gunicorn -k gthread -w 1 telegram_bot.main_bot:app --bind 0.0.0.0:$PORT
