@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # === VARIABLES DE ENTORNO === #
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8238035123:AAHaX2iFZjNWFMLwm8QUmjYc09qA_y9IDa8")
-PORT = int(os.environ.get("PORT", 5000))
+PORT = int(os.environ.get("PORT", 0))  # ✅ Puerto dinámico para Render
 WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
 
 # === FLASK APP === #
@@ -148,6 +148,7 @@ async def modelo_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(texto, parse_mode="Markdown")
 
+
 # === REGISTRAR COMANDOS === #
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("ayuda", ayuda))
@@ -222,5 +223,5 @@ if __name__ == "__main__":
 
     threading.Thread(target=run_asyncio_loop, daemon=True).start()
 
-    logger.info(f"🌐 Servidor Flask ejecutándose en puerto {PORT}")
+    logger.info(f"🌐 Servidor Flask ejecutándose en puerto dinámico {PORT}")
     app.run(host="0.0.0.0", port=PORT)
