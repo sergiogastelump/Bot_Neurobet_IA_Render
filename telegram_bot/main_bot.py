@@ -350,9 +350,30 @@ def webhook():
 
 
 # === INICIO DEL SERVICIO === #
+# === INICIO DEL SERVICIO === #
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Neurobet IA (Modo Servidor Render)")
+
+    # Inicializa el modelo y los hilos de aprendizaje/auto-evaluación
     inicializar_modelo()
     iniciar_hilo_autoaprendizaje()
     iniciar_autoevaluacion_automatica()
+
+    # Iniciar el bot de Telegram en segundo plano
+    import threading
+
+    async def iniciar_bot():
+        logger.info("🤖 Iniciando aplicación Telegram en modo webhook concurrente...")
+        await application.initialize()
+        await application.start()
+        logger.info("✅ Bot de Telegram listo y escuchando actualizaciones.")
+
+    def run_asyncio_loop():
+        import asyncio
+        asyncio.run(iniciar_bot())
+
+    threading.Thread(target=run_asyncio_loop, daemon=True).start()
+
+    # Iniciar Flask
+    logger.info(f"🌐 Servidor Flask ejecutándose en puerto {PORT}")
     app.run(host="0.0.0.0", port=PORT)
