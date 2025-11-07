@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # === VARIABLES DE ENTORNO === #
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8238035123:AAHaX2iFZjNWFMLwm8QUmjYc09qA_y9IDa8")
-PORT = int(os.environ.get("PORT", 0))
+PORT = int(os.environ.get("PORT", 8080))
 WEBHOOK_URL = "https://bot-neurobet-ia-render.onrender.com/webhook"
 
 # === FLASK APP === #
