@@ -6,12 +6,11 @@ import logging
 import threading
 import asyncio
 from pathlib import Path
-
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ====== IMPORTS DE SERVICIOS ====== #
+# ====== IMPORTAR SERVICIOS ====== #
 from services.ia_service import predecir_partido
 from services.memoria_service import (
     guardar_evento_global,
@@ -31,70 +30,51 @@ from services.evaluacion_service import (
 )
 from services.visualizacion_service import generar_grafico_precision
 
-# =========================================================
-# CONFIG LOGGING
-# =========================================================
+# ====== CONFIGURACIÓN DE LOGS ====== #
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
-# =========================================================
-# VARIABLES DE ENTORNO
-# =========================================================
-# deja este token así porque lo usas en local y en render por env
+# ====== VARIABLES DE ENTORNO ====== #
 TELEGRAM_TOKEN = os.getenv(
     "TELEGRAM_TOKEN",
     "8238035123:AAHaX2iFZjNWFMLwm8QUmjYc09qA_y9IDa8"
 )
-
-# Render te da el puerto en $PORT. Si no, 10000
 PORT = int(os.environ.get("PORT", 10000))
-
-# Tu URL pública de Render (ya la usaste)
 WEBHOOK_URL = "https://bot-neurobet-ia.onrender.com/webhook"
 
-# =========================================================
-# FLASK APP (la que gunicorn va a servir)
-# =========================================================
+# ====== FLASK APP ====== #
 app = Flask(__name__)
 
-# =========================================================
-# TELEGRAM APPLICATION
-# =========================================================
-# la app de telegram vive en un hilo aparte con su propio loop
-application: Application = Application.builder().token(TELEGRAM_TOKEN).build()
+# ====== INICIAR APLICACIÓN TELEGRAM ====== #
+application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# vamos a guardar el loop del bot para poder verlo si hace falta
 BOT_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
 
 # =========================================================
-# COMANDOS TELEGRAM
+# COMANDOS DEL BOT
 # =========================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     logger.info(f"Usuario {user.first_name} inició el bot.")
-
     texto = (
         f"👋 ¡Hola {user.first_name}!\n"
-        f"Soy *Neurobet IA*, tu asistente de predicciones deportivas con memoria, autoaprendizaje y dashboard.\n\n"
+        f"Soy *Neurobet IA*, tu asistente de predicciones deportivas con autoaprendizaje y dashboard.\n\n"
         f"📘 *Comandos disponibles:*\n"
         f"/predecir América vs Chivas\n"
         f"/historial - Tus predicciones\n"
         f"/global - Actividad global\n"
-        f"/aprendizaje - Entrenar IA manual\n"
+        f"/aprendizaje - Entrenamiento IA\n"
         f"/evaluar - Comprobar aciertos reales\n"
-        f"/modelo - Estado del modelo\n"
-        f"/dashboard - Ver panel rápido\n"
-        f"/tipster - Picks del día (demo)\n"
+        f"/modelo - Estado actual del modelo\n"
+        f"/dashboard - Ver panel web\n"
+        f"/tipster - Picks diarios (demo)\n"
         f"/ayuda - Lista de comandos"
     )
-
     await update.message.reply_text(texto, parse_mode="Markdown")
-
-    # memoria
     guardar_evento_usuario(user.id, "inicio", {"mensaje": "/start"})
     guardar_evento_global(user.first_name, "inicio", "Comando /start usado")
 
@@ -124,41 +104,33 @@ async def predecir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     equipo_local, equipo_visitante = texto.split("vs", 1)
-    equipo_local = equipo_local.strip()
-    equipo_visitante = equipo_visitante.strip()
+    equipo_local, equipo_visitante = equipo_local.strip(), equipo_visitante.strip()
 
     pred = predecir_partido(equipo_local, equipo_visitante)
-
     msg = (
         f"🔮 *Predicción IA:*\n"
         f"{pred['resultado']}\n"
         f"🎯 Precisión estimada: {pred['probabilidad']}%\n"
         f"🤖 Modo: {pred['modo']}"
     )
-
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-    # guardamos en memoria
-    evento = {
-        "consulta": f"{equipo_local} vs {equipo_visitante}",
-        "resultado": pred,
-    }
+    evento = {"consulta": f"{equipo_local} vs {equipo_visitante}", "resultado": pred}
     guardar_evento_usuario(user.id, "predicción", evento)
     guardar_evento_global(user.first_name, "predicción", evento)
-    logger.info(f"💾 Predicción registrada: {evento}")
 
 
 async def evaluar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    res = evaluar_predicciones_recientes()
-    if not res:
+    resultado = evaluar_predicciones_recientes()
+    if not resultado:
         await update.message.reply_text("📭 No hay predicciones recientes para evaluar.")
         return
 
     msg = (
         "🧠 *Evaluación completada*\n\n"
-        f"📊 Partidos revisados: {res['evaluados']}\n"
-        f"✅ Aciertos: {res['aciertos']}\n"
-        f"📈 Precisión actual: {res['precision']}%"
+        f"📊 Partidos revisados: {resultado['evaluados']}\n"
+        f"✅ Aciertos: {resultado['aciertos']}\n"
+        f"📈 Precisión actual: {resultado['precision']}%"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -176,7 +148,6 @@ async def modelo_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📈 Factor de Confianza: {round(modelo['factor_confianza'], 3)}\n"
     )
 
-    # si hay gráfico, lo mandamos
     graf = generar_grafico_precision()
     if graf and os.path.exists(graf):
         await update.message.reply_photo(photo=open(graf, "rb"), caption=texto, parse_mode="Markdown")
@@ -187,18 +158,16 @@ async def modelo_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     hist = obtener_historial_usuario(user.id)
-
     if not hist:
         await update.message.reply_text("📭 No tienes historial aún. Usa /predecir para comenzar.")
         return
 
     texto = "📜 *Tus últimas interacciones:*\n\n"
     for item in hist[-10:][::-1]:
-        texto += f"• {item['accion'].capitalize()} - {item['timestamp']}\n"
+        texto += f"• {item['accion']} - {item['timestamp']}\n"
         if "consulta" in item.get("datos", {}):
             texto += f"   Partido: {item['datos']['consulta']}\n"
             texto += f"   Resultado: {item['datos']['resultado']['resultado']}\n\n"
-
     await update.message.reply_text(texto, parse_mode="Markdown")
 
 
@@ -211,7 +180,6 @@ async def global_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = "🌍 *Últimas actividades globales:*\n\n"
     for e in resumen[-15:][::-1]:
         texto += f"👤 {e['usuario']} → {e['accion']} ({e['timestamp']})\n"
-
     await update.message.reply_text(texto, parse_mode="Markdown")
 
 
@@ -231,19 +199,17 @@ async def aprendizaje_manual(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def tipster(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Demo del módulo tipster que platicamos."""
     texto = (
         "📣 *Picks IA del día (demo)*\n"
-        "1) América -1.0 🟢 cuota 1.65\n"
-        "   Motivo: racha goleadora + rival débil de visita.\n\n"
-        "2) Over 8.5 córners 🇲🇽 cuota 1.72\n"
-        "   Motivo: ambos equipos promedian >4 córners.\n\n"
-        "3) MLB: Yankees gana 🟡 cuota 1.60\n"
-        "   Motivo: pitcher abridor con mejor ERA.\n\n"
-        "📈 Estos picks luego irán a tabla, gráfico y registro mensual."
+        "1️⃣ América -1.0 🟢 cuota 1.65\n"
+        "   Motivo: racha goleadora + rival débil.\n\n"
+        "2️⃣ Over 8.5 córners 🇲🇽 cuota 1.72\n"
+        "   Motivo: promedian más de 4 cada uno.\n\n"
+        "3️⃣ MLB: Yankees gana 🟡 cuota 1.60\n"
+        "   Motivo: mejor ERA del pitcher abridor.\n\n"
+        "📈 Pronto se integrará el registro histórico y gráficos."
     )
     await update.message.reply_text(texto, parse_mode="Markdown")
-
 
 # =========================================================
 # REGISTRAR COMANDOS
@@ -261,10 +227,9 @@ application.add_handler(CommandHandler("tipster", tipster))
 # =========================================================
 # ENDPOINTS FLASK
 # =========================================================
-
 @app.route("/", methods=["GET"])
 def home():
-    return "🤖 Neurobet IA Webhook activo (Flask + Telegram)", 200
+    return "🤖 Neurobet IA Webhook activo y en aprendizaje continuo.", 200
 
 
 HISTORIAL_PATH = Path("data/historial_predicciones.json")
@@ -282,17 +247,13 @@ def dashboard():
     precision = round((aciertos / evaluados) * 100, 2) if evaluados else 0
 
     ultimas = historial[-10:][::-1]
-
     html = "<h1>📊 Neurobet IA - Dashboard</h1>"
-    html += f"<p>Total de predicciones: <b>{total}</b></p>"
-    html += f"<p>Evaluadas: <b>{evaluados}</b> | Aciertos: <b>{aciertos}</b> | Precisión: <b>{precision}%</b></p>"
-    html += "<h2>Últimas predicciones</h2><ul>"
+    html += f"<p>Total: {total} | Evaluadas: {evaluados} | Precisión: {precision}%</p><ul>"
     for item in ultimas:
         partido = item.get("partido", "N/D")
         pred = item.get("prediccion", "N/D")
         res_real = item.get("resultado_real", "pendiente")
-        acierto = item.get("acierto")
-        estado = "✅" if acierto else ("⌛" if acierto is None else "❌")
+        estado = "✅" if item.get("acierto") else ("⌛" if item.get("acierto") is None else "❌")
         html += f"<li>{estado} {partido} → {pred} | real: {res_real}</li>"
     html += "</ul>"
     return html, 200
@@ -300,61 +261,54 @@ def dashboard():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Recibe el update de Telegram y lo pasa a la cola del bot."""
     try:
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
         logger.info(f"✅ Update recibido correctamente: {update}")
-        # esto es lo que hace que NO se caiga: lo metemos en la cola
         application.update_queue.put_nowait(update)
         return "OK", 200
     except Exception as e:
         logger.error(f"❌ Error en webhook: {e}")
         return "ERROR", 500
 
-
 # =========================================================
-# ARRANCAR BOT EN HILO DE FONDO (cuando gunicorn importa este módulo)
+# INICIO DEL BOT EN HILO DE FONDO
 # =========================================================
-
 def _start_bot_background():
-    """Crea un loop exclusivo para el bot y lo deja vivo."""
+    """Crea un loop exclusivo para el bot y procesa updates."""
     def runner():
         global BOT_EVENT_LOOP
         BOT_EVENT_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(BOT_EVENT_LOOP)
 
         async def main():
-            # inicializa modelo aquí también por seguridad
             inicializar_modelo()
-
             await application.initialize()
             await application.start()
 
-            # intenta fijar el webhook en Telegram
             try:
-                await application.bot.set_webhook(WEBHOOK_URL)
-                logger.info(f"📡 Webhook fijado en {WEBHOOK_URL}")
+                await application.bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+                logger.info(f"📡 Webhook establecido correctamente: {WEBHOOK_URL}")
             except Exception as e:
-                logger.warning(f"⚠️ No se pudo fijar webhook desde el bot: {e}")
+                logger.error(f"⚠️ Error al establecer webhook: {e}")
 
             logger.info("🟢 Bot Telegram inicializado correctamente (modo Render).")
 
-            # dejar vivo el loop
-            await asyncio.Event().wait()
+            # Mantener vivo y procesar updates continuamente
+            while True:
+                try:
+                    update = await application.update_queue.get()
+                    await application.process_update(update)
+                except Exception as e:
+                    logger.error(f"❌ Error procesando update: {e}")
 
         BOT_EVENT_LOOP.run_until_complete(main())
 
     t = threading.Thread(target=runner, daemon=True)
     t.start()
 
-
-# Llamamos esto al importar el módulo (gunicorn lo importa)
-_start_bot_background()
-
-# También arrancamos los hilos de auto cosas
+# Ejecutar cuando se carga el módulo
 inicializar_modelo()
 iniciar_hilo_autoaprendizaje()
 iniciar_autoevaluacion_automatica()
-
-# 🔚 No hay if __name__ == "__main__" porque gunicorn ya sirve `app`
+_start_bot_background()
