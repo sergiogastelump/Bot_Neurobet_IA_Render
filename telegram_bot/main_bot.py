@@ -49,9 +49,8 @@ WEBHOOK_URL = "https://bot-neurobet-ia.onrender.com/webhook"
 # ====== FLASK APP ====== #
 app = Flask(__name__)
 
-# ====== INICIAR APLICACIÓN TELEGRAM ====== #
+# ====== APLICACIÓN TELEGRAM ====== #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
-
 BOT_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
 
 # =========================================================
@@ -63,18 +62,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Usuario {user.first_name} inició el bot.")
     texto = (
         f"👋 ¡Hola {user.first_name}!\n"
-        f"Soy *Neurobet IA*, tu asistente de predicciones deportivas con autoaprendizaje y dashboard.\n\n"
+        f"Soy *Neurobet IA*, tu asistente de predicciones deportivas con inteligencia artificial y autoaprendizaje.\n\n"
         f"📘 *Comandos disponibles:*\n"
         f"/predecir América vs Chivas\n"
         f"/historial - Tus predicciones\n"
         f"/global - Actividad global\n"
-        f"/aprendizaje - Entrenamiento IA\n"
-        f"/evaluar - Comprobar aciertos reales\n"
-        f"/modelo - Estado actual del modelo\n"
-        f"/dashboard - Ver panel web\n"
-        f"/tipster - Picks diarios (demo)\n"
+        f"/aprendizaje - Entrenar IA\n"
+        f"/evaluar - Revisar aciertos\n"
+        f"/modelo - Estado actual\n"
+        f"/dashboard - Panel web\n"
+        f"/tipster - Picks diarios\n"
         f"/debug - Diagnóstico del sistema\n"
-        f"/ayuda - Lista de comandos"
+        f"/ayuda - Ver comandos"
     )
     await update.message.reply_text(texto, parse_mode="Markdown")
     guardar_evento_usuario(user.id, "inicio", {"mensaje": "/start"})
@@ -148,7 +147,7 @@ async def modelo_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 *Estado actual del modelo IA:*\n\n"
         f"📊 Sesgo Local: {round(modelo['sesgo_local'], 3)}\n"
         f"📊 Sesgo Visitante: {round(modelo['sesgo_visitante'], 3)}\n"
-        f"📈 Factor de Confianza: {round(modelo['factor_confianza'], 3)}\n"
+        f"📈 Confianza: {round(modelo['factor_confianza'], 3)}\n"
     )
 
     graf = generar_grafico_precision()
@@ -194,9 +193,9 @@ async def aprendizaje_manual(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     msg = (
         "🧠 *Autoaprendizaje manual ejecutado*\n\n"
-        f"📊 Total de predicciones: {res['total_predicciones']}\n"
-        f"✅ Aciertos estimados: {res['aciertos_estimados']}\n"
-        f"📈 Precisión calculada: {res['precision']}%"
+        f"📊 Total: {res['total_predicciones']}\n"
+        f"✅ Aciertos: {res['aciertos_estimados']}\n"
+        f"📈 Precisión: {res['precision']}%"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -205,11 +204,8 @@ async def tipster(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = (
         "📣 *Picks IA del día (demo)*\n"
         "1️⃣ América -1.0 🟢 cuota 1.65\n"
-        "   Motivo: racha goleadora + rival débil.\n\n"
         "2️⃣ Over 8.5 córners 🇲🇽 cuota 1.72\n"
-        "   Motivo: promedian más de 4 cada uno.\n\n"
-        "3️⃣ MLB: Yankees gana 🟡 cuota 1.60\n"
-        "   Motivo: mejor ERA del pitcher abridor.\n\n"
+        "3️⃣ MLB: Yankees gana 🟡 cuota 1.60\n\n"
         "📈 Próximamente se integrará registro y estadísticas."
     )
     await update.message.reply_text(texto, parse_mode="Markdown")
@@ -253,10 +249,9 @@ def home():
     return "🤖 Neurobet IA Webhook activo y en aprendizaje continuo.", 200
 
 
-HISTORIAL_PATH = Path("data/historial_predicciones.json")
-
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
+    HISTORIAL_PATH = Path("data/historial_predicciones.json")
     if HISTORIAL_PATH.exists():
         historial = json.loads(HISTORIAL_PATH.read_text(encoding="utf-8"))
     else:
@@ -293,46 +288,46 @@ def webhook():
         return "ERROR", 500
 
 # =========================================================
-# INICIO DEL BOT EN HILO DE FONDO
+# HILO ESTABLE DE TELEGRAM
 # =========================================================
 def _start_bot_background():
-    """Crea un loop exclusivo para el bot y procesa updates."""
+    """Loop de procesamiento estable que evita bloqueos."""
     def runner():
         global BOT_EVENT_LOOP
         BOT_EVENT_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(BOT_EVENT_LOOP)
 
         async def main():
-            inicializar_modelo()
-            await application.initialize()
-            await application.start()
-
             try:
+                inicializar_modelo()
+                await application.initialize()
+                await application.start()
+
                 await application.bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
                 logger.info(f"📡 Webhook establecido correctamente: {WEBHOOK_URL}")
-            except Exception as e:
-                logger.error(f"⚠️ Error al establecer webhook: {e}")
+                logger.info("🟢 Bot Telegram inicializado correctamente (modo Render).")
 
-            logger.info("🟢 Bot Telegram inicializado correctamente (modo Render).")
-
-            while True:
-                try:
+                while True:
                     update = await application.update_queue.get()
-                    await application.process_update(update)
-                except Exception as e:
-                    logger.error(f"❌ Error procesando update: {e}")
+                    if update:
+                        logger.info(f"📩 Procesando update de {update.effective_user.first_name if update.effective_user else 'desconocido'}")
+                        await application.process_update(update)
+                    await asyncio.sleep(0.1)
+
+            except Exception as e:
+                logger.error(f"❌ Error principal en hilo de bot: {e}")
 
         BOT_EVENT_LOOP.run_until_complete(main())
 
-    t = threading.Thread(target=runner, daemon=True)
-    t.start()
+    hilo_bot = threading.Thread(target=runner, daemon=True)
+    hilo_bot.start()
 
 # =========================================================
-# EJECUCIÓN PRINCIPAL (CON RETRASO CONTROLADO)
+# INICIO DEL SISTEMA
 # =========================================================
 inicializar_modelo()
 iniciar_hilo_autoaprendizaje()
 iniciar_autoevaluacion_automatica()
 
-time.sleep(1)  # ⏱️ Espera breve antes de iniciar el hilo del bot
+time.sleep(1)
 _start_bot_background()
