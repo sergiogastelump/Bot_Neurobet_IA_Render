@@ -5,35 +5,33 @@ import threading
 import asyncio
 from flask import Flask, request, jsonify
 from datetime import datetime
-
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ====== SERVICIOS INTERNOS ====== #
+# === Importar servicios internos === #
 from services.ia_service import predecir_partido
 from services.autoaprendizaje_service import inicializar_modelo
 from services.scheduler_service import iniciar_hilo_autoaprendizaje
 from services.evaluacion_service import iniciar_autoevaluacion_automatica
 
-# ====== LOGS ====== #
+# === Configuración de logs === #
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ====== CONFIGURACIÓN ====== #
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8238035123:AAHaX2iFZjNWFMLwm8QUmjYc09qA_y9IDa8")
+# === Configuración general === #
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "TOKEN_DE_TU_BOT")
 WEBHOOK_URL = "https://bot-neurobet-ia.onrender.com/webhook"
-PORT = int(os.environ.get("PORT", 10000))
+PORT = int(os.environ.get("PORT", 10000))  # Render define este valor dinámicamente
 
 app = Flask(__name__)
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# ====== VARIABLES GLOBALES ====== #
-BOT_EVENT_LOOP = None
+BOT_LOOP = None
 START_TIME = datetime.utcnow()
 PRECISION_SIMULADA = 72
 
 # =========================================================
-# COMANDOS TELEGRAM
+# COMANDOS DEL BOT
 # =========================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -43,7 +41,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Soy *Neurobet IA*, tu asistente de predicciones deportivas.\n\n"
         f"Comandos disponibles:\n"
         f"/predecir América vs Chivas\n"
-        f"/debug - Estado actual del sistema",
+        f"/debug - Estado del sistema",
         parse_mode="Markdown"
     )
 
@@ -67,15 +65,13 @@ async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         f"🧩 *Diagnóstico del sistema:*\n"
         f"📡 Webhook: {WEBHOOK_URL}\n"
-        f"⚙️ Event Loop: {'Activo ✅' if BOT_EVENT_LOOP and BOT_EVENT_LOOP.is_running() else 'Inactivo ❌'}\n"
+        f"⚙️ Event Loop: {'Activo ✅' if BOT_LOOP and BOT_LOOP.is_running() else 'Inactivo ❌'}\n"
         f"⏱️ Uptime: {uptime} h\n"
         f"📈 Precisión simulada: {PRECISION_SIMULADA}%"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# =========================================================
-# REGISTRAR COMANDOS
-# =========================================================
+# Registrar comandos
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("predecir", predecir))
 application.add_handler(CommandHandler("debug", debug))
@@ -85,20 +81,20 @@ application.add_handler(CommandHandler("debug", debug))
 # =========================================================
 @app.route("/", methods=["GET"])
 def home():
-    return "🤖 Neurobet IA activo y conectado.", 200
+    return "🤖 Neurobet IA activo y conectado correctamente.", 200
 
 @app.route("/status", methods=["GET"])
 def status():
     uptime = round((datetime.utcnow() - START_TIME).total_seconds() / 3600, 2)
-    status_info = {
+    info = {
         "status": "OK",
         "uptime_hours": uptime,
         "precision_simulada": f"{PRECISION_SIMULADA}%",
         "webhook_activo": True,
-        "loop_activo": BOT_EVENT_LOOP.is_running() if BOT_EVENT_LOOP else False,
-        "modo": "Render Free KeepAlive"
+        "loop_activo": BOT_LOOP.is_running() if BOT_LOOP else False,
+        "modo": "Render KeepAlive"
     }
-    return jsonify(status_info), 200
+    return jsonify(info), 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -106,25 +102,24 @@ def webhook():
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
         logger.info(f"✅ Update recibido correctamente: {update}")
-        if BOT_EVENT_LOOP and BOT_EVENT_LOOP.is_running():
-            asyncio.run_coroutine_threadsafe(application.process_update(update), BOT_EVENT_LOOP)
+        if BOT_LOOP and BOT_LOOP.is_running():
+            asyncio.run_coroutine_threadsafe(application.process_update(update), BOT_LOOP)
         else:
-            logger.warning("⚠️ Event loop inactivo, reiniciando hilo del bot...")
-            threading.Thread(target=_start_bot_background, daemon=True).start()
+            logger.warning("⚠️ Loop inactivo, reiniciando hilo...")
+            threading.Thread(target=start_bot_background, daemon=True).start()
         return "OK", 200
     except Exception as e:
         logger.error(f"❌ Error en webhook: {e}")
         return "ERROR", 500
 
 # =========================================================
-# HILO PRINCIPAL
+# FUNCIONES DEL BOT
 # =========================================================
-def _start_bot_background():
-    """Inicia el bot en segundo plano y mantiene el loop activo."""
+def start_bot_background():
     def runner():
-        global BOT_EVENT_LOOP
-        BOT_EVENT_LOOP = asyncio.new_event_loop()
-        asyncio.set_event_loop(BOT_EVENT_LOOP)
+        global BOT_LOOP
+        BOT_LOOP = asyncio.new_event_loop()
+        asyncio.set_event_loop(BOT_LOOP)
 
         async def main():
             try:
@@ -132,28 +127,26 @@ def _start_bot_background():
                 await application.initialize()
                 await application.start()
                 await application.bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-                logger.info(f"📡 Webhook establecido correctamente: {WEBHOOK_URL}")
-                await application.bot.send_message(
-                    chat_id=5124041224,
-                    text="✅ Neurobet IA está en línea y lista para recibir comandos."
-                )
+                logger.info(f"📡 Webhook establecido: {WEBHOOK_URL}")
+                await application.bot.send_message(chat_id=5124041224, text="✅ Neurobet IA en línea.")
                 while True:
                     await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"❌ Error en hilo del bot: {e}")
 
-        BOT_EVENT_LOOP.run_until_complete(main())
+        BOT_LOOP.run_until_complete(main())
 
     threading.Thread(target=runner, daemon=True).start()
 
 # =========================================================
-# INICIO AUTOMÁTICO
+# INICIO DE LA APP
 # =========================================================
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Neurobet IA (modo Render KeepAlive)...")
     inicializar_modelo()
     iniciar_hilo_autoaprendizaje()
     iniciar_autoevaluacion_automatica()
-    time.sleep(1)
-    _start_bot_background()
+    time.sleep(2)
+    start_bot_background()
+    logger.info(f"🌐 Flask ejecutándose en puerto dinámico: {PORT}")
     app.run(host="0.0.0.0", port=PORT)
