@@ -62,7 +62,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Usuario {user.first_name} inició el bot.")
     texto = (
         f"👋 ¡Hola {user.first_name}!\n"
-        f"Soy *Neurobet IA*, tu asistente de predicciones deportivas con inteligencia artificial y autoaprendizaje.\n\n"
+        f"Soy *Neurobet IA*, tu asistente de predicciones deportivas con inteligencia artificial.\n\n"
         f"📘 *Comandos disponibles:*\n"
         f"/predecir América vs Chivas\n"
         f"/historial - Tus predicciones\n"
@@ -249,32 +249,6 @@ def home():
     return "🤖 Neurobet IA Webhook activo y en aprendizaje continuo.", 200
 
 
-@app.route("/dashboard", methods=["GET"])
-def dashboard():
-    HISTORIAL_PATH = Path("data/historial_predicciones.json")
-    if HISTORIAL_PATH.exists():
-        historial = json.loads(HISTORIAL_PATH.read_text(encoding="utf-8"))
-    else:
-        historial = []
-
-    total = len(historial)
-    evaluados = sum(1 for h in historial if h.get("acierto") is not None)
-    aciertos = sum(1 for h in historial if h.get("acierto") is True)
-    precision = round((aciertos / evaluados) * 100, 2) if evaluados else 0
-
-    ultimas = historial[-10:][::-1]
-    html = "<h1>📊 Neurobet IA - Dashboard</h1>"
-    html += f"<p>Total: {total} | Evaluadas: {evaluados} | Precisión: {precision}%</p><ul>"
-    for item in ultimas:
-        partido = item.get("partido", "N/D")
-        pred = item.get("prediccion", "N/D")
-        res_real = item.get("resultado_real", "pendiente")
-        estado = "✅" if item.get("acierto") else ("⌛" if item.get("acierto") is None else "❌")
-        html += f"<li>{estado} {partido} → {pred} | real: {res_real}</li>"
-    html += "</ul>"
-    return html, 200
-
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -291,7 +265,7 @@ def webhook():
 # HILO ESTABLE DE TELEGRAM
 # =========================================================
 def _start_bot_background():
-    """Loop de procesamiento estable que evita bloqueos."""
+    """Loop de procesamiento estable y sincronizado con Flask."""
     def runner():
         global BOT_EVENT_LOOP
         BOT_EVENT_LOOP = asyncio.new_event_loop()
@@ -307,15 +281,25 @@ def _start_bot_background():
                 logger.info(f"📡 Webhook establecido correctamente: {WEBHOOK_URL}")
                 logger.info("🟢 Bot Telegram inicializado correctamente (modo Render).")
 
+                # 🔁 Nuevo: confirmación de arranque
+                await application.bot.send_message(
+                    chat_id=5124041224,
+                    text="✅ Neurobet IA está en línea y lista para recibir comandos."
+                )
+
                 while True:
-                    update = await application.update_queue.get()
-                    if update:
-                        logger.info(f"📩 Procesando update de {update.effective_user.first_name if update.effective_user else 'desconocido'}")
-                        await application.process_update(update)
-                    await asyncio.sleep(0.1)
+                    try:
+                        update = await asyncio.wait_for(application.update_queue.get(), timeout=2.0)
+                        if update:
+                            logger.info(f"📩 Procesando update de {update.effective_user.first_name if update.effective_user else 'desconocido'}")
+                            await application.process_update(update)
+                    except asyncio.TimeoutError:
+                        await asyncio.sleep(0.1)
+                    except Exception as e:
+                        logger.error(f"⚠️ Error procesando update: {e}")
 
             except Exception as e:
-                logger.error(f"❌ Error principal en hilo de bot: {e}")
+                logger.error(f"❌ Error principal en hilo del bot: {e}")
 
         BOT_EVENT_LOOP.run_until_complete(main())
 
