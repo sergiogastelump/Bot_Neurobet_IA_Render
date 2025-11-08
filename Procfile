@@ -1,1 +1,1 @@
-web: gunicorn -k gthread -w 1 main_bot:app
+web: gunicorn -k gthread -w 1 telegram_bot.main_bot:app
