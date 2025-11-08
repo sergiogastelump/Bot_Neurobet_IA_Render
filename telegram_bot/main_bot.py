@@ -3,16 +3,15 @@ import time
 import logging
 import threading
 import asyncio
-from flask import Flask, request
+from flask import Flask, request, jsonify
+from datetime import datetime
+
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ====== SERVICIOS ====== #
+# ====== SERVICIOS INTERNOS ====== #
 from services.ia_service import predecir_partido
-from services.autoaprendizaje_service import (
-    inicializar_modelo,
-    evaluar_predicciones
-)
+from services.autoaprendizaje_service import inicializar_modelo
 from services.scheduler_service import iniciar_hilo_autoaprendizaje
 from services.evaluacion_service import iniciar_autoevaluacion_automatica
 
@@ -20,20 +19,21 @@ from services.evaluacion_service import iniciar_autoevaluacion_automatica
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ====== CONFIG ====== #
+# ====== CONFIGURACIÓN ====== #
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8238035123:AAHaX2iFZjNWFMLwm8QUmjYc09qA_y9IDa8")
 WEBHOOK_URL = "https://bot-neurobet-ia.onrender.com/webhook"
 PORT = int(os.environ.get("PORT", 10000))
 
-# ====== FLASK APP ====== #
 app = Flask(__name__)
-
-# ====== TELEGRAM ====== #
 application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+# ====== VARIABLES GLOBALES ====== #
 BOT_EVENT_LOOP = None
+START_TIME = datetime.utcnow()
+PRECISION_SIMULADA = 72
 
 # =========================================================
-# COMANDOS
+# COMANDOS TELEGRAM
 # =========================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -43,7 +43,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Soy *Neurobet IA*, tu asistente de predicciones deportivas.\n\n"
         f"Comandos disponibles:\n"
         f"/predecir América vs Chivas\n"
-        f"/debug - Estado actual",
+        f"/debug - Estado actual del sistema",
         parse_mode="Markdown"
     )
 
@@ -63,10 +63,13 @@ async def predecir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uptime = round((datetime.utcnow() - START_TIME).total_seconds() / 3600, 2)
     msg = (
-        "🧩 *Diagnóstico del sistema:*\n"
+        f"🧩 *Diagnóstico del sistema:*\n"
         f"📡 Webhook: {WEBHOOK_URL}\n"
-        f"⚙️ Event Loop: {'Activo ✅' if BOT_EVENT_LOOP and BOT_EVENT_LOOP.is_running() else 'Inactivo ❌'}"
+        f"⚙️ Event Loop: {'Activo ✅' if BOT_EVENT_LOOP and BOT_EVENT_LOOP.is_running() else 'Inactivo ❌'}\n"
+        f"⏱️ Uptime: {uptime} h\n"
+        f"📈 Precisión simulada: {PRECISION_SIMULADA}%"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -78,12 +81,24 @@ application.add_handler(CommandHandler("predecir", predecir))
 application.add_handler(CommandHandler("debug", debug))
 
 # =========================================================
-# FLASK ENDPOINTS
+# ENDPOINTS FLASK
 # =========================================================
 @app.route("/", methods=["GET"])
 def home():
     return "🤖 Neurobet IA activo y conectado.", 200
 
+@app.route("/status", methods=["GET"])
+def status():
+    uptime = round((datetime.utcnow() - START_TIME).total_seconds() / 3600, 2)
+    status_info = {
+        "status": "OK",
+        "uptime_hours": uptime,
+        "precision_simulada": f"{PRECISION_SIMULADA}%",
+        "webhook_activo": True,
+        "loop_activo": BOT_EVENT_LOOP.is_running() if BOT_EVENT_LOOP else False,
+        "modo": "Render Free KeepAlive"
+    }
+    return jsonify(status_info), 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -132,10 +147,13 @@ def _start_bot_background():
     threading.Thread(target=runner, daemon=True).start()
 
 # =========================================================
-# INICIO
+# INICIO AUTOMÁTICO
 # =========================================================
-inicializar_modelo()
-iniciar_hilo_autoaprendizaje()
-iniciar_autoevaluacion_automatica()
-time.sleep(1)
-_start_bot_background()
+if __name__ == "__main__":
+    logger.info("🚀 Iniciando Neurobet IA (modo Render KeepAlive)...")
+    inicializar_modelo()
+    iniciar_hilo_autoaprendizaje()
+    iniciar_autoevaluacion_automatica()
+    time.sleep(1)
+    _start_bot_background()
+    app.run(host="0.0.0.0", port=PORT)
