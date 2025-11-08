@@ -1,5 +1,5 @@
 # ============================================================
-# 🧠 NEUROBET IA - v7.5 Render Stable (Flask + Telegram Webhook)
+# 🧠 NEUROBET IA - v7.6 Render Stable (Flask + Webhook)
 # ============================================================
 
 import os
@@ -63,7 +63,7 @@ async def predecir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Partido: {partido}\n"
         f"Resultado: {opcion}\n"
         f"Confianza: {confianza}%\n\n"
-        "🤖 Sistema IA v7.5 (Render Stable)"
+        "🤖 Sistema IA v7.6 (Render Stable)"
     )
     await update.message.reply_text(mensaje, parse_mode="Markdown")
     logging.info(f"✅ Predicción enviada: {partido}")
@@ -90,7 +90,7 @@ application.add_handler(CommandHandler("debug", debug))
 
 @app.route("/", methods=["GET"])
 def home():
-    return "🧠 Neurobet IA (Render Stable)", 200
+    return "🧠 Neurobet IA (Render Stable v7.6)", 200
 
 @app.route("/status", methods=["GET"])
 def status():
@@ -108,6 +108,11 @@ async def webhook():
     try:
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
+        # Inicializar antes de procesar si no está iniciado
+        if not application.running:
+            await application.initialize()
+            await application.start()
+            logging.info("✅ Aplicación Telegram inicializada correctamente.")
         await application.process_update(update)
         logging.info("✅ Update procesado correctamente (webhook directo).")
         return "OK", 200
@@ -118,23 +123,20 @@ async def webhook():
 # ============================================================
 # 🏁 ARRANQUE
 # ============================================================
+
 async def iniciar_bot():
     """Inicializa el bot y configura el webhook"""
     try:
+        await application.initialize()
+        await application.start()
         await application.bot.set_webhook(WEBHOOK_URL)
         logging.info(f"📡 Webhook configurado correctamente: {WEBHOOK_URL}")
     except Exception as e:
         logging.error(f"❌ Error configurando webhook: {e}")
 
-# ============================================================
-# 🔥 INICIO AUTOMÁTICO CUANDO SE CARGA EL WORKER DE GUNICORN
-# ============================================================
-
 loop = asyncio.get_event_loop()
 loop.run_until_complete(iniciar_bot())
 
-# ============================================================
-# ✅ EJECUCIÓN FLASK (Render lo levanta con Gunicorn)
-# ============================================================
+# Flask se mantiene corriendo por Gunicorn
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
