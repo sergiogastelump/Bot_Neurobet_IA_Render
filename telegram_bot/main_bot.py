@@ -2,6 +2,7 @@
 
 import os
 import json
+import time
 import logging
 import threading
 import asyncio
@@ -72,6 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"/modelo - Estado actual del modelo\n"
         f"/dashboard - Ver panel web\n"
         f"/tipster - Picks diarios (demo)\n"
+        f"/debug - Diagnóstico del sistema\n"
         f"/ayuda - Lista de comandos"
     )
     await update.message.reply_text(texto, parse_mode="Markdown")
@@ -90,7 +92,8 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/evaluar\n"
         "/modelo\n"
         "/dashboard\n"
-        "/tipster",
+        "/tipster\n"
+        "/debug",
         parse_mode="Markdown"
     )
 
@@ -207,7 +210,24 @@ async def tipster(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "   Motivo: promedian más de 4 cada uno.\n\n"
         "3️⃣ MLB: Yankees gana 🟡 cuota 1.60\n"
         "   Motivo: mejor ERA del pitcher abridor.\n\n"
-        "📈 Pronto se integrará el registro histórico y gráficos."
+        "📈 Próximamente se integrará registro y estadísticas."
+    )
+    await update.message.reply_text(texto, parse_mode="Markdown")
+
+
+async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    status = {
+        "modelo": os.path.exists("modelo_entrenado.joblib"),
+        "autoaprendizaje": True,
+        "webhook": WEBHOOK_URL,
+        "event_loop": BOT_EVENT_LOOP.is_running() if BOT_EVENT_LOOP else False
+    }
+    texto = (
+        "🧩 *Diagnóstico del sistema:*\n\n"
+        f"📡 Webhook: {status['webhook']}\n"
+        f"🧠 Modelo cargado: {'✅' if status['modelo'] else '❌'}\n"
+        f"🔁 Autoaprendizaje activo: {'✅' if status['autoaprendizaje'] else '❌'}\n"
+        f"⚙️ Event Loop: {'✅ Activo' if status['event_loop'] else '❌ Inactivo'}"
     )
     await update.message.reply_text(texto, parse_mode="Markdown")
 
@@ -223,6 +243,7 @@ application.add_handler(CommandHandler("historial", historial))
 application.add_handler(CommandHandler("global", global_resumen))
 application.add_handler(CommandHandler("aprendizaje", aprendizaje_manual))
 application.add_handler(CommandHandler("tipster", tipster))
+application.add_handler(CommandHandler("debug", debug))
 
 # =========================================================
 # ENDPOINTS FLASK
@@ -294,7 +315,6 @@ def _start_bot_background():
 
             logger.info("🟢 Bot Telegram inicializado correctamente (modo Render).")
 
-            # Mantener vivo y procesar updates continuamente
             while True:
                 try:
                     update = await application.update_queue.get()
@@ -307,8 +327,12 @@ def _start_bot_background():
     t = threading.Thread(target=runner, daemon=True)
     t.start()
 
-# Ejecutar cuando se carga el módulo
+# =========================================================
+# EJECUCIÓN PRINCIPAL (CON RETRASO CONTROLADO)
+# =========================================================
 inicializar_modelo()
 iniciar_hilo_autoaprendizaje()
 iniciar_autoevaluacion_automatica()
+
+time.sleep(1)  # ⏱️ Espera breve antes de iniciar el hilo del bot
 _start_bot_background()
